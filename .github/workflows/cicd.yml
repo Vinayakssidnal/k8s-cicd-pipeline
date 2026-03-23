@@ -19,9 +19,11 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
       - name: Run unit tests
-        run: pytest
+        run: |
+          pytest
 
   build-push:
     needs: test
@@ -33,9 +35,8 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
       - name: Build and push Docker image
         run: |
-          # The '.' assumes your Dockerfile is in the root directory
-          docker build -t $IMAGE:${{ github.sha }} .
-          docker push $IMAGE:${{ github.sha }}
+          docker build -t ${{ env.IMAGE }}:${{ github.sha }} .
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
 
   deploy:
     needs: build-push
@@ -46,10 +47,11 @@ jobs:
         uses: azure/setup-kubectl@v3
       - name: Configure kubeconfig
         run: |
+          # This decodes the FLATTENED Kubeconfig you stored in Secrets
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > kube.yaml
-      - name: Update Kubernetes Deployment
+      - name: Deploy to Cluster
         run: |
-          # This command targets the existing deployment you manually created
-          kubectl set image deployment/flask-app flask=$IMAGE:${{ github.sha }} --kubeconfig=kube.yaml
-          # This waits for the pods to be 'Ready' before marking the job as successful
+          # Updates the image of the container named 'flask' in the 'flask-app' deployment
+          kubectl set image deployment/flask-app flask=${{ env.IMAGE }}:${{ github.sha }} --kubeconfig=kube.yaml
+          # Waits for the rollout to complete successfully
           kubectl rollout status deployment/flask-app --kubeconfig=kube.yaml
